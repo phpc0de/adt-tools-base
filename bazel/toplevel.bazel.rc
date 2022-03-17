@@ -1,0 +1,188 @@
+# Options applied to all Bazel invocations in the workspace.
+# This file is copied to //tools/bazel.rc from
+# //tools/base/bazel/toplevel.bazel.rc by repo init.
+
+# Remote Build Execution requires a strong hash function, such as SHA256.
+startup --host_jvm_args=-Dbazel.DigestFunction=SHA256
+
+# Enforces UTF-8 encoding in bazel tests.
+test --test_env='LC_ALL=en_US.UTF-8'
+test --jvmopt='-Dsun.jnu.encoding=UTF-8'
+test --jvmopt='-Dfile.encoding=UTF-8'
+test --jvmopt='-Xmx4G'
+test --jvmopt='-XX:+UseConcMarkSweepGC'
+test --test_output=errors
+test --verbose_failures
+
+# Local runs require longer timeouts.
+build:local --test_timeout=120,600,1800,7200
+build:windows --config=local
+build:windows --config=results-local
+
+# Test results caching is on by default. This is here so we have a presubmit
+# config as bazel rules can use the config to determine presubmit invocation.
+build:presubmit --cache_test_results=yes
+
+# Postsubmit bots don't cache results and use keep_going to find all
+# failures. Config should be inherited by postsubmit configs.
+build:postsubmit --keep_going
+build:postsubmit --cache_test_results=no
+
+# Don't use JUnit from Bazel.
+test --explicit_java_test_deps
+
+# Tests depend on not having a real user name, but bazel now returns the
+# real one. This flag keeps the old behavior of not having a home directory.
+test --sandbox_fake_username
+
+test --sandbox_tmpfs_path=/tmp
+
+# When running bazel coverage, make sure to set this user-defined setting.
+# This is useful, for instance, to mark our version of jacocoant.jar as neverlink
+# when running coverage, otherwise it will conflict at runtime with the version
+# bazel uses and coverage won't be collected for targets that depend on it, directly
+# and indirectly. See b/112891050 for more details.
+coverage --define coverage=true
+
+build --sandbox_tmpfs_path=/tmp
+build --javacopt="-g:source,lines,vars"  # Keep debug info
+build --javacopt=-Xep:FallThrough:OFF  # enforcing Google style, essentially
+build --javacopt=-Xep:StreamResourceLeak:WARN # has been downgraded on Error Prone HEAD
+build --cxxopt=-std=c++11
+build --copt=-fvisibility=hidden
+
+# Forwards the system $SHELL environment variable so remote execution of bazel
+# finds make in the ndk-build script (see b/72179674).
+build --test_env=SHELL
+
+build:upsalite_results --bes_backend=buildeventservice.googleapis.com
+build:upsalite_results --bes_timeout=60s
+build:upsalite_results --auth_scope=https://www.googleapis.com/auth/cloud-source-tools
+build:upsalite_results --project_id=908081808034
+
+build:remote_common --config=upsalite_results
+
+# Enable the remote cache so all remote action results can be shared
+build:remote_common --remote_cache=remotebuildexecution.googleapis.com
+build:remote_common --tls_enabled=true # Enable encryption
+build:remote_common --experimental_strict_action_env=true
+build:remote_common --remote_timeout=3600
+
+# Enable authentication. This will pick up application default credentials by
+# default. You can use --auth_credentials=some_file.json to use a service
+# account credential instead.
+build:remote_common --auth_enabled=true
+
+build:remote_common --remote_instance_name=projects/google.com:android-studio-alphasource/instances/default_instance
+
+build:release --copt=-fdata-sections
+build:release --cxxopt=-fdata-sections
+build:release --copt=-fno-exceptions
+build:release --cxxopt=-fno-exceptions
+build:release --copt=-ffunction-sections
+build:release --cxxopt=-ffunction-sections
+build:release -c opt
+build:release --strip=always
+
+# Mimics the release config to report accurate performance numbers in tests.
+build:remote_common --config=release
+
+# Use prebuilt JDK when doing local bazel build/test
+build --host_javabase=//prebuilts/studio/jdk:jdk_runtime
+build --javabase=//prebuilts/studio/jdk:jdk_runtime
+build --host_java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
+build --java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
+
+# cpp sandbox is very slow on mac and linux
+build --strategy=CppCompile=standalone
+build --strategy=CppLink=standalone
+build --strategy=CcStrip=standalone
+build --stripopt=--strip-unneeded
+
+# default android native abis
+build --fat_apk_cpu=x86,x86_64,armeabi-v7a,armeabi,arm64-v8a
+
+# Remote execution configuration. Enable remote_common args which include
+# Upsalite test reporting.
+build:remote --config=remote_common
+build:remote --nobuild_runfile_links
+build:remote --strategy=CppCompile=remote
+build:remote --strategy=CppLink=remote
+
+# Depending on how many machines are in the remote execution instance, setting
+# this higher can make builds faster by allowing more jobs to run in parallel.
+# Setting it too high can result in jobs that timeout, however, while waiting
+# for a remote machine to execute them.
+build:remote --jobs=110
+build:remote --show_timestamps
+
+# Import several flags related to specifying the toolchain and (if applicable)
+# java properties.
+build:remote --host_javabase=//prebuilts/studio/jdk:jdk_runtime
+build:remote --javabase=//prebuilts/studio/jdk:jdk_runtime
+build:remote --crosstool_top=@bazel_toolchains//configs/debian8_clang/0.3.0/bazel_0.16.1/default:toolchain
+build:remote --experimental_remote_platform_override='properties:{ name:"container-image" value:"docker://gcr.io/google.com/android-studio-alphasource/nosla-debian8-clang-as@sha256:71c886770d70dd28c1e8a8f58eab8f8ed8bc7322550ec0dcca3cf28ae6eeac19"}'
+
+build:remote --host_java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
+build:remote --java_toolchain=@bazel_tools//tools/jdk:toolchain_hostjdk8
+build:remote --action_env=BAZEL_DO_NOT_DETECT_CPP_TOOLCHAIN=1
+build:remote --extra_toolchains=@bazel_toolchains//configs/debian8_clang/0.3.0/bazel_0.16.1/cpp:cc-toolchain-clang-x86_64-default
+build:remote --extra_execution_platforms=//tools/base/bazel/foundry:rbe_debian8
+build:remote --host_platform=//tools/base/bazel/foundry:rbe_debian8
+build:remote --platforms=//tools/base/bazel/foundry:rbe_debian8
+
+# Set various strategies so that all actions execute remotely. Mixing remote
+# and local execution will lead to errors unless the toolchain and remote
+# machine exactly match the host machine.
+build:remote --spawn_strategy=remote
+build:remote --strategy=Javac=remote
+build:remote --strategy=Closure=remote
+build:remote --genrule_strategy=remote
+build:remote --define=EXECUTOR=remote
+
+# Compute MD5 digests of files with multiple threads. Testing to see if this
+# leads to better performance with RBE. See b/77543953.
+build:remote --experimental_multi_threaded_digest=true
+
+# Enable remote execution so actions are performed on the remote systems.
+build:remote --remote_executor=remotebuildexecution.googleapis.com
+
+# Enforce stricter environment rules, which eliminates some non-hermetic
+# behavior and therefore improves both the remote cache hit rate and the
+# correctness and repeatability of the build.
+build:remote --experimental_strict_action_env=true
+
+# Set flags for remote_common which includes Upsalite uploading
+build:remote-cache --config=remote_common
+
+# Enforce stricter environment rules, which eliminates some non-hermetic
+# behavior and therefore improves both the remote cache hit rate and the
+# correctness and repeatability of the build.
+build:remote-cache --experimental_strict_action_env=true
+
+# Set various strategies so that all action results can be looked up from and
+# uploaded to the remote cache. You can use --experimental_remote_spawn_cache
+# instead of --spawn_strategy=remote to enable sandboxing.
+build:remote-cache --experimental_remote_spawn_cache
+build:remote-cache --spawn_strategy=sandboxed
+build:remote-cache --strategy=Javac=sandboxed
+build:remote-cache --strategy=Closure=sandboxed
+build:remote-cache --genrule_strategy=sandboxed
+
+# Set flags for uploading to BES without Remote Cache.
+build:results-local --config=upsalite_results
+build:results-local --tls_enabled=true
+build:results-local --auth_enabled=true
+build:results-local --spawn_strategy=local
+build:results-local --experimental_remote_spawn_cache
+build:results-local --remote_cache=remotebuildexecution.googleapis.com
+build:results-local --remote_timeout=3600
+build:results-local --remote_instance_name=projects/google.com:android-studio-alphasource/instances/default_instance
+
+# Top level config group for remote cache local execution on Mac.
+build:mac-experimental --config=remote-cache
+build:mac-experimental --experimental_remote_platform_override='properties:{name:"platform" value:"mac"}'
+
+# Top level config group for remote cache local execution on Linux.
+build:linux-experimental --config=remote-cache
+build:linux-experimental --experimental_remote_platform_override='properties:{name:"platform" value:"linux"}'

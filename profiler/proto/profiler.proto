@@ -1,0 +1,455 @@
+/*
+ * Copyright (C) 2016 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+syntax = "proto3";
+
+package profiler.proto;
+option java_package = "com.android.tools.profiler.proto";
+option java_outer_classname = "Profiler";
+
+import "common.proto";
+
+service ProfilerService {
+  // Gets current timestamp that used in the device's profiling data.
+  // A client may use this API to relate profiling data' timestamps to other
+  // clocks such as the desktop's calendar time.
+  // TODO(b/29223899): Add device's calendar time.
+  rpc GetCurrentTime(TimeRequest) returns (TimeResponse) {
+  }
+
+  // Gets version.
+  rpc GetVersion(VersionRequest) returns (VersionResponse) {
+  }
+
+  // Gets the currently connected devices.
+  // TODO: expand with timing information for historical requests.
+  rpc GetDevices(GetDevicesRequest) returns (GetDevicesResponse) {
+  }
+
+  // Gets the running processes of a given device
+  rpc GetProcesses(GetProcessesRequest) returns (GetProcessesResponse) {
+  }
+
+  // Query for cached byte data associated with some ID. Other services may
+  // return an ID which can be used to fetch data using this central cache.
+  rpc GetBytes(BytesRequest) returns (BytesResponse) {
+  }
+
+  // Query for whether the agent is alive.
+  rpc GetAgentStatus(AgentStatusRequest) returns (AgentStatusResponse) {
+  }
+
+  // Makes all necessary configurations needed for attaching agent on startup.
+  // Returns |agent_args| to be used with the application launch command,
+  // e.g "am start --attach-agent |agent_args|".
+  rpc ConfigureStartupAgent(ConfigureStartupAgentRequest)
+      returns (ConfigureStartupAgentResponse) {
+  }
+
+  // Start a new session. As a side effect, this also starts all profilers for
+  // the PID being targeted by this session.
+  // If a session with the same PID is already running, this method will
+  // essentially be a no-op (except it will move the session to the top of the
+  // sorted-by-recency list).
+  rpc BeginSession(BeginSessionRequest) returns (BeginSessionResponse) {
+  }
+
+  // Stop a target session (if currently running). As a side effect,
+  // this also stops all profilers for the PID being targeted by this session.
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse) {
+  }
+
+  // Import a session
+  rpc ImportSession(ImportSessionRequest) returns (ImportSessionResponse) {
+  }
+
+  // Request a session's meta data by ID.
+  // Metadatas are only used on Studio-side to retrieve display-related info.
+  rpc GetSessionMetaData(GetSessionMetaDataRequest)
+      returns (GetSessionMetaDataResponse) {
+  }
+
+  // Requests all sessions in the time range from |start_timestamp| (exclusive)
+  // to |end_timestamp| (inclusive), or mathematically written as the interval
+  // (start_timestamp, end_timestamp]. Results will be returned ordered by
+  // recency (most recent first).
+  rpc GetSessions(GetSessionsRequest) returns (GetSessionsResponse) {
+  }
+
+  // Delete a session by ID. If it is currently running, |EndSession| will
+  // automatically be called on it.
+  rpc DeleteSession(DeleteSessionRequest) returns (DeleteSessionResponse) {
+  }
+
+  // Executes a |Command| on the daemon.
+  rpc Execute(ExecuteRequest) returns (ExecuteResponse) {
+  }
+
+  // Gets all the events that are timed between |from_timestamp| and
+  // |end_timestamp| (in ns).
+  // This API is most useful for getting all profiling data regardless of any
+  // filtering, for example, from a device.
+  rpc GetEvents(GetEventsRequest) returns (GetEventsResponse) {
+  }
+
+  // Gets all the event groups (events that share the same event_id) that
+  // intersect the range [|from_timestamp|, |to_timestamp|]. If the paramter
+  // |end| is used, an event_group will be considered "open" until such an event
+  // shows up. For example if we have a "BEGIN_SESSION" at time 1,  and the
+  // range requested is [2,3], and the |end| field is set to END_SESSION",  then
+  // the event group will be considered opened, and this intersecting the range.
+  rpc GetEventGroups(GetEventGroupsRequest) returns (GetEventGroupsResponse) {
+  }
+}
+
+message TimeRequest {
+  int64 device_id = 1;
+}
+
+message TimeResponse {
+  // What's used as timestamps in all profiler data (unless otherwise
+  // specified). (a.k.a: Timestamp from clock_gettime(CLOCK_MONOTONIC, ...), ns
+  // precision.)
+  int64 timestamp_ns = 1;
+
+  // The number of microseconds since the Epoch.
+  // (a.k.a: Timestamp from gettimeofday, us precision.)
+  int64 epoch_timestamp_us = 2;
+}
+
+message VersionRequest {
+  int64 device_id = 1;
+}
+
+message VersionResponse {
+  string version = 1;
+}
+
+message GetDevicesRequest {
+}
+
+message GetDevicesResponse {
+  repeated Device device = 1;
+}
+
+message GetProcessesRequest {
+  int64 device_id = 1;
+}
+
+message GetProcessesResponse {
+  repeated Process process = 2;
+}
+
+message ConfigureStartupAgentRequest {
+  string app_package_name = 1;
+  string agent_lib_file_name = 2;
+  int64 device_id = 3;
+}
+
+message ConfigureStartupAgentResponse {
+  string agent_args = 1;
+}
+
+message BeginSessionRequest {
+  message JvmtiConfig {
+    // True if an jvmti agent should be attached, false otherwise.
+    bool attach_agent = 1;
+    // TODO(b/65458869): Remove when moving process discovery to perfd.
+    string agent_lib_file_name = 2;
+    // True if live allocation is used, false otherwise.
+    bool live_allocation_enabled = 3;
+  }
+
+  int64 device_id = 1;
+  int32 pid = 2;
+  JvmtiConfig jvmti_config = 3;
+  int64 request_time_epoch_ms = 4;
+  string session_name = 5;
+}
+
+message BeginSessionResponse {
+  Session session = 1;
+}
+
+message EndSessionRequest {
+  int64 session_id = 1;
+  // TODO remove when device_id can be queried from
+  // session_id on Studio-side.
+  int64 device_id = 2;
+}
+
+message EndSessionResponse {
+  Session session = 1;
+}
+
+message ImportSessionRequest {
+  Session session = 1;
+  string session_name = 2;
+  int64 start_timestamp_epoch_ms = 3;
+  SessionMetaData.SessionType sessionType = 4;
+}
+
+message ImportSessionResponse {
+  enum Status {
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    FAILURE = 2;
+  }
+  Status status = 1;
+}
+
+message GetSessionMetaDataRequest {
+  // This is expected to be a valid session's id, otherwise a
+  // a default GetSessionMetaDataResponse instance will be returned.
+  int64 session_id = 1;
+}
+
+message GetSessionMetaDataResponse {
+  SessionMetaData data = 1;
+}
+
+message GetSessionsRequest {
+  int64 start_timestamp = 1;
+  int64 end_timestamp = 2;
+}
+
+message GetSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message DeleteSessionRequest {
+  int64 session_id = 1;
+}
+
+message DeleteSessionResponse {
+}
+
+message BytesRequest {
+  // ID for fetching contents from a cache. The value will always be safe to use
+  // as a filename, if you want to cache the contents locally to disk for
+  // example.
+  string id = 1;
+  Session session = 2;
+}
+
+message BytesResponse {
+  // Byte contents from a cache, or "" if no data was found associated with the
+  // cache key used to fetch it, or if the data was removed after some timeout.
+  bytes contents = 1;
+}
+
+message AgentStatusRequest {
+  int64 device_id = 1;
+  int32 pid = 2;
+}
+
+message AgentStatusResponse {
+  enum Status {
+    UNSPECIFIED = 0;
+    ATTACHED = 1;
+    DETACHED = 2;
+  }
+  Status status = 1;
+  // Whether the requested process supports advanced profiling (perfa).
+  // For pre-O, since the agent is included wih the app, this returns
+  // true if we receive an heartbeat from the app.
+  // For post-O, since the agent is late-attached during runtime, this
+  // return tures if an JVMTI agent can be attached. (e.g. the app is
+  // debuggable).
+  bool is_agent_attachable = 2;
+}
+
+message ExecuteRequest {
+  Command command = 1;
+}
+
+message ExecuteResponse {
+}
+
+message GetEventsRequest {
+  int64 from_timestamp = 1;  // inclusive (ns)
+  int64 to_timestamp = 2;    // inclusive (ns)
+}
+
+message GetEventsResponse {
+  repeated Event events = 1;
+}
+
+// Every field in this message serves the purpose of filtering if it is set.
+// When multiple fields are set, all filtering conditions must be met so an
+// event group can be returned.
+//
+// The default value of a proto type (e.g., 0 for int64) is not considered
+// valid. For instance, 0 is not a valid session ID.
+message GetEventGroupsRequest {
+  // An event is returned if |stream_id| matches.
+  int64 stream_id = 1;
+  // An event is returned if |session_id| matches.
+  int64 session_id = 2;
+  // An event is returned if |kind| matches.
+  Event.Kind kind = 3;
+  // |end| field is used to determine whether a group should be returned when
+  // |from_timestamp| is set.
+  // A group becomes active at any event whose type is not |end|, and becomes
+  // inactive at an event of type |end|. A group may be active multiple times
+  // during the lifetime. A group is returned if it's ever active during the
+  // range of [from_timestamp, to_timestamp].
+  Event.Type end = 4;
+  // When |from_timestamp| and/or |to_timestamp| are set, an event group is
+  // returned including the events during with the range, also including the
+  // last event before |from_timestamp| and the first one after |to_timestamp|
+  // in each group.
+  int64 from_timestamp = 5;  // inclusive
+  int64 to_timestamp = 6;    // inclusive
+}
+
+message GetEventGroupsResponse {
+  repeated EventGroup groups = 1;
+}
+
+// An event group is a collection of events that share the same event_id.
+// The events in a group should have the same |session_id| and |kind|.
+message EventGroup {
+  int64 event_id = 1;
+  repeated Event events = 2;
+}
+
+message Command {
+  enum CommandType {
+    UNSPECIFIED = 0;
+    BEGIN_SESSION = 1;
+    END_SESSION = 2;
+  }
+
+  // A stream is an entity that provides data, such as a device or an imported
+  // file.
+  int64 stream_id = 1;  // If ommited the command is applied to all streams
+  CommandType type = 2;
+  oneof union {
+    BeginSession begin_session = 3;
+    EndSession end_session = 4;
+  }
+}
+
+message BeginSession {
+  message JvmtiConfig {
+    // True if an jvmti agent should be attached, false otherwise.
+    bool attach_agent = 1;
+    // TODO(b/65458869): Remove when moving process discovery to perfd.
+    string agent_lib_file_name = 2;
+    // True if live allocation is used, false otherwise.
+    bool live_allocation_enabled = 3;
+  }
+
+  int32 pid = 1;
+  JvmtiConfig jvmti_config = 2;
+  int64 request_time_epoch_ms = 3;
+  string session_name = 4;
+}
+
+message EndSession {
+  int64 session_id = 1;
+}
+
+// Note: stream_id should NOT be part of an |Event| message because a session
+// (which is a collection of events) could be serialized and imported later.
+// Since an event can appear in multiple streams, it is confusing to have a
+// stream_id. In addition, it is unnecessary because the caller of GetEvents or
+// GetEventGroups should know the stream_id.
+message Event {
+  enum Type {
+    UNSPECIFIED = 0;
+    SESSION_STARTED = 1;
+    SESSION_ENDED = 2;
+    PROCESS_STARTED = 3;
+    PROCESS_ENDED = 4;
+    STREAM_CONNECTED = 5;
+    STREAM_DISCONNECTED = 6;
+  }
+  enum Kind {
+    NONE = 0;
+    STREAM = 1;
+    PROCESS = 2;
+    SESSION = 3;
+  }
+  // The session the event belongs to. For session events this is the same as
+  // |event_id|
+  int64 session_id = 1;
+
+  // The id of this event. This is not unique, for concepts that span across a
+  // range of time (network requests, threads, etc), they will all share the
+  // same |event_id|.
+  int64 event_id = 2;
+
+  // The kind of event (a higher level grouping of events that belong to the
+  // same area) Useful for queries such as "all the groups of "kind" SESSION.
+  Event.Kind kind = 3;
+
+  // The actual type of the event.
+  Event.Type type = 4;
+  // Timestamp in device wall clock time (ns).
+
+  int64 timestamp = 5;
+  oneof union {
+    SessionStarted session_started = 6;
+    SessionEnded session_ended = 7;
+    Process process = 8;
+    Stream stream = 9;
+  }
+}
+
+message SessionStarted {
+  // The PID of the app. Note that this is actually an int16, but gRPC only
+  // provides int32.
+  int32 pid = 1;
+
+  // The session type here maps directly to the SessionMetadata.SessionType.
+  // After the move to the new pipeline we can remove SessionMetadata.
+  enum SessionType {
+    UNSPECIFIED = 0;
+    FULL = 1;
+    MEMORY_CAPTURE = 2;
+    CPU_CAPTURE = 3;
+  }
+  // Session start time (unix epoch) as provided by the BeginSessionRequest.
+  // For Studio-side display only.
+  int64 start_timestamp_epoch_ms = 2;
+  // Session name as provided by the BeginSessionRequest.
+  // For Studio-side display only.
+  string session_name = 3;
+  // Whether JVMTI is used for the session
+  bool jvmti_enabled = 4;
+  // Whether JVMTI live allocation is enabled for the session.
+  bool live_allocation_enabled = 5;
+  // Session's type which indicates what data it has.
+  SessionType type = 6;
+}
+
+message SessionEnded {
+}
+
+message Stream {
+  // A list of supported stream types.
+  enum Type {
+    UNSPECIFIED_STREAM_TYPE = 0;
+    DEVICE = 1;
+  }
+  // The id of a stream. This is set by the multiplexer.
+  int64 stream_id = 1;
+  Stream.Type type = 2;
+  oneof union {
+    Device device = 3;
+  }
+}

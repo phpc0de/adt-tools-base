@@ -1,0 +1,133 @@
+/*
+ * Copyright (C) 2018 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+syntax = "proto3";
+
+package profiler.proto;
+option java_package = "com.android.tools.profiler.proto";
+option java_outer_classname = "Cpu";
+
+// CPU usage data of an app process and the entire system at a given point.
+//
+// CPU usage data is most valuable when app data is combined with system data,
+// e.g., showing the CPU usage percentage number. One data consumer (e.g., an
+// Android Studio instance) would request an app's data, and another consumer
+// (e.g., another Android Studio instance) would request another app's. Both of
+// them need system data. Therefore, we put system data together with every
+// piece of app specific data.
+//
+// The absolute values of fields in this message are not very interesting.
+// The difference of two instances is more useful. It can show the system-
+// wide CPU utilization percentage and an app's CPU utilization percentage.
+// The values of the fields may overflow their type, but the usefulness stays
+// the same.
+message CpuUsageData {
+  // Timestamp(ns) when the data sample was collected.
+  //
+  // TODO: in the new pipeline, timestamp is stored in the common Event proto.
+  // Remove this field when old pipeline is deprecated.
+  int64 end_timestamp = 1;
+  // Amount of time that this process has been using CPU, measured in
+  // milliseconds.
+  int64 app_cpu_time_in_millisec = 2;
+  // Amount of time that the entire system (including applications) has been
+  // using CPU, measured in milliseconds.
+  int64 system_cpu_time_in_millisec = 3;
+  // Amount of time since the system start, measured in milliseconds.
+  int64 elapsed_time_in_millisec = 4;
+  // System usage per core.
+  repeated CpuCoreUsageData cores = 5;
+}
+
+message CpuCoreUsageData {
+  // Index of the CPU core.
+  int32 core = 1;
+  // Amount of time that the entire system (including applications) has been
+  // using this CPU core, measured in milliseconds.
+  int64 system_cpu_time_in_millisec = 2;
+  // Amount of time since the system start, measured in milliseconds.
+  int64 elapsed_time_in_millisec = 3;
+  // Current CPU frequency in kHz. Used for energy usage estimation.
+  int32 frequency_in_khz = 4;
+}
+
+// Represents a single event when a thread changes its state.
+message CpuThreadData {
+  enum State {
+    UNSPECIFIED = 0;
+    RUNNING = 1;
+    SLEEPING = 2;
+    WAITING = 3;
+    ZOMBIE = 4;
+    STOPPED = 5;
+    TRACING = 6;
+    PAGING = 7;
+    DEAD = 8;
+    WAKEKILL = 9;
+    WAKING = 10;
+    PARKED = 11;
+  }
+
+  // Thread ID as returned from the Android OS. Unique within a process.
+  int32 tid = 1;
+
+  // Thread name as returned from the Android OS.
+  string name = 2;
+
+  // The current thread state in this activity.
+  State state = 3;
+}
+
+enum CpuTraceType {
+  UNSPECIFIED_TYPE = 0;
+  ART = 1;
+  SIMPLEPERF = 2;
+  ATRACE = 3;
+}
+
+enum CpuTraceMode {
+  UNSPECIFIED_MODE = 0;
+  SAMPLED = 1;
+  INSTRUMENTED = 2;
+}
+
+enum TraceInitiationType {
+  UNSPECIFIED_INITIATION = 0;
+  INITIATED_BY_UI = 1;  // specifically means non-startup UI operations.
+  INITIATED_BY_API = 2;
+  INITIATED_BY_STARTUP = 3;
+}
+
+// A CpuTraceInfo contains the information regarding a trace
+// and should be returned if its time overlaps with the request time range.
+message CpuTraceInfo {
+  int64 trace_id = 1;
+  CpuTraceType trace_type = 2;
+  CpuTraceMode trace_mode = 3;
+  TraceInitiationType initiation_type = 4;
+  int64 from_timestamp = 5;  // inclusive
+  int64 to_timestamp = 6;    // inclusive
+  // Path to the binary file containing the trace content.
+  string trace_file_path = 7;
+  // These thread ids are those having data captured by the designated trace.
+  // TODO this is currently updated by Studio back into the database after
+  // a capture has been parsed. This information is used strictly to highlight
+  // the items in the Thread view that has captured data.
+  // In the new pipeline, we don't support that type of workflow yet (aka
+  // updating existing data). Potential option would be to have this as a
+  // separate data kind, or remove this feature (just highlight all threads
+  // within the capture) or implement it differently (caching on Studio-side).
+  repeated int32 tids = 8;
+}

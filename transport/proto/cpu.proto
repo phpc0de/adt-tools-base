@@ -1,0 +1,341 @@
+/*
+ * Copyright (C) 2016 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+syntax = "proto3";
+
+package profiler.proto;
+option java_package = "com.android.tools.profiler.proto";
+option java_outer_classname = "CpuProfiler";
+
+import "common.proto";
+import "cpu_data.proto";
+
+service CpuService {
+  rpc GetData(CpuDataRequest) returns (CpuDataResponse) {
+  }
+
+  rpc GetThreads(GetThreadsRequest) returns (GetThreadsResponse) {
+  }
+
+  rpc GetTraceInfo(GetTraceInfoRequest) returns (GetTraceInfoResponse) {
+  }
+
+  // This RPC is implemented by perfd-host only.
+  rpc SaveTraceInfo(SaveTraceInfoRequest) returns (EmptyCpuReply) {
+  }
+
+  rpc GetTrace(GetTraceRequest) returns (GetTraceResponse) {
+  }
+
+  // Starts collecting execution metrics of a running app, such as usage info
+  // and thread states. Does nothing if the app is already being monitored.
+  // TODO(b/29258733): Support configuring sampling details.
+  rpc StartMonitoringApp(CpuStartRequest) returns (CpuStartResponse) {
+  }
+
+  // Stops monitoring a running app. Does nothing if the app is not being
+  // monitored, or is not running.
+  rpc StopMonitoringApp(CpuStopRequest) returns (CpuStopResponse) {
+  }
+
+  // Starts recording app stacktraces of a running app.
+  // Does nothing if the app is already being profiled with Simpleperf.
+  // Returns an error if the app is already being profiled with ART.
+  rpc StartProfilingApp(CpuProfilingAppStartRequest)
+      returns (CpuProfilingAppStartResponse) {
+  }
+
+  // Stops recording app stacktraces of a running app. Does nothing if the app
+  // is not being
+  // profiled, or is not running.
+  rpc StopProfilingApp(CpuProfilingAppStopRequest)
+      returns (CpuProfilingAppStopResponse) {
+  }
+
+  // Checks whether an app is being profiled using StartProfilingApp and
+  // StopProfilingApp calls in this service at a given moment, assuming no
+  // other means have been used to start or stop profiling the app (such
+  // as 'am' command line tool or through DDMS).
+  rpc CheckAppProfilingState(ProfilingStateRequest)
+      returns (ProfilingStateResponse) {
+  }
+
+  rpc StartStartupProfiling(StartupProfilingRequest)
+      returns (StartupProfilingResponse) {
+  }
+
+  rpc GetCpuCoreConfig(CpuCoreConfigRequest) returns (CpuCoreConfigResponse) {
+  }
+}
+
+// Requests all the traces that overlap with a time range.
+message GetTraceInfoRequest {
+  Session session = 1;
+  int64 from_timestamp = 2;  // inclusive
+  int64 to_timestamp = 3;    // inclusive
+}
+
+message GetTraceInfoResponse {
+  repeated CpuTraceInfo trace_info = 1;
+  int64 response_timestamp = 2;
+}
+
+message SaveTraceInfoRequest {
+  Session session = 1;
+  CpuTraceInfo trace_info = 2;
+  // If |updated_trace| isn't null, it contains the trace after preprocessing
+  // (e.g., symbolizing a simpleperf raw trace and converting it into the
+  // protobuf format). The preprocessed trace should be used for all
+  // subsequent references to the given trace ID in the |trace_info|.
+  bytes preprocessed_trace = 3;
+}
+
+message Thread {
+  int32 tid = 1;
+  string name = 2;
+}
+
+message GetTraceRequest {
+  Session session = 1;
+  // Trace ID should be unique within a session.
+  int64 trace_id = 2;
+}
+
+message GetTraceResponse {
+  // TODO: add more status as needed.
+  enum Status {
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    FAILURE = 2;
+  }
+  Status status = 1;
+  bytes data = 2;
+  // Type of the trace used to obtain the trace.
+  CpuTraceType trace_type = 3;
+  // Mode (i.e. sampling or instrumentation) used to obtain the trace.
+  CpuTraceMode trace_mode = 4;
+}
+
+// Requests profiler data associated with |session|, in the time range
+// from |start_timestamp| (exclusive) to |end_timestamp| (inclusive), or
+// mathematically written as in interval (start_timestamp, end_timestamp].
+message CpuDataRequest {
+  Session session = 1;
+  int64 start_timestamp = 2;  // Use -2^63 if no data is too old to return.
+  int64 end_timestamp = 3;  // Use 2^63 - 1 if no data is too recent to return.
+}
+
+message CpuDataResponse {
+  repeated CpuUsageData data = 1;
+}
+
+message CpuStartRequest {
+  Session session = 1;
+}
+
+message CpuStartResponse {
+  enum Status {
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    FAILURE_APP_NOT_RUNNING = 2;
+    FAILURE_UNKNOWN = 3;
+    FAILURE = 4;
+  }
+  Status status = 1;
+}
+
+message StartupProfilingRequest {
+  string app_package = 1;
+  int64 device_id = 2;
+  CpuProfilerConfiguration configuration = 3;
+  string abi_cpu_arch = 4;
+}
+
+message StartupProfilingResponse {
+  enum Status {
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    FAILURE = 2;
+  }
+  Status status = 1;
+  string error_message = 2;
+  // Buffer size (in KB) acquired by Atrace trace configs.
+  int32 buffer_size_acquired_kb = 3;
+  // Trace file path set only by ART trace configs.
+  string file_path = 4;
+}
+
+message CpuStopRequest {
+  Session session = 1;
+}
+
+message CpuStopResponse {
+  enum Status {
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    FAILURE_UNKNOWN = 2;
+  }
+  Status status = 1;
+}
+
+// Request profiling of app (identified by its |session|) to start.
+// INSTRUMENTED is support only when ART is the profiler.
+message CpuProfilingAppStartRequest {
+  Session session = 1;
+  CpuProfilerConfiguration configuration = 2;
+  // ABI CPU architecture of the app to be profiled. It should be one the
+  // values defined by SdkConstants.CPU_ARCH_*, e.g. 'arm', 'arm64', 'x86'.
+  // This field is required to invoke the correct simpleperf binary; not used
+  // by other profiling technologies.
+  string abi_cpu_arch = 3;
+}
+
+// Returns the status and absolute path location (on device) where the trace
+// file will be written.
+message CpuProfilingAppStartResponse {
+  enum Status {
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    FAILURE = 2;
+  }
+  Status status = 1;
+  string error_message = 2;
+  // Buffer size (in KB) acquired by Atrace trace configs.
+  int32 buffer_size_acquired_kb = 3;
+}
+
+message CpuProfilerConfiguration {
+  // Name of the configuration. For Studio-side display only.
+  string name = 1;
+  CpuTraceMode trace_mode = 2;
+  CpuTraceType trace_type = 3;
+  // When using ART, the size of the in-memory buffer that holds tracing data.
+  int32 buffer_size_in_mb = 4;
+  // When using sampling, the sampling interval in microseconds.
+  int32 sampling_interval_us = 5;
+  // Whether to disable live allocation tracking during CPU recording.
+  // This is primarily used to reduce app performance overhead from live
+  // allocation tracking. For Studio-side only.
+  bool disable_live_allocation = 6;
+}
+
+// Request profiling of app (identified by its |session|) to stop.
+message CpuProfilingAppStopRequest {
+  Session session = 1;
+  CpuTraceType trace_type = 2;
+  CpuTraceMode trace_mode = 3;
+}
+
+message CpuProfilingAppStopResponse {
+  enum Status {
+    UNSPECIFIED = 0;
+    SUCCESS = 1;
+    NO_ONGOING_PROFILING = 2;
+    APP_PROCESS_DIED = 3;
+    APP_PID_CHANGED = 4;
+    PROFILER_PROCESS_DIED = 5;
+    STOP_COMMAND_FAILED = 6;
+    STILL_PROFILING_AFTER_STOP = 7;
+    CANNOT_START_WAITING = 8;
+    WAIT_TIMEOUT = 9;
+    WAIT_FAILED = 10;
+    CANNOT_READ_WAIT_EVENT = 11;
+    CANNOT_COPY_FILE = 12;
+    CANNOT_FORM_FILE = 13;
+    CANNOT_READ_FILE = 14;
+  }
+  Status status = 1;
+  string error_message = 2;
+  // Trace ID should be unique within an app.
+  int64 trace_id = 3;
+  // TODO: remove this trace attribute after fully migrating to the new API.
+  bytes trace = 4;
+}
+
+message ProfilingStateRequest {
+  Session session = 1;
+}
+
+message ProfilingStateResponse {
+  // True means the app in the request is being profiled by an earlier
+  // StartProfilingApp call that's successful, and a subsequent StopProfilingApp
+  // call hasn't happened.
+  bool being_profiled = 1;
+  CpuProfilerConfiguration configuration = 2;
+  // The timestamp when the profiling started if the app is being profiled.
+  int64 start_timestamp = 3;
+  // The timestamp when the profiling state was checked.
+  int64 check_timestamp = 4;
+  TraceInitiationType initiation_type = 5;
+  // Whether the app in the request is being profiled by a startup profiling.
+  // TODO: Remove this field. Use |initiation_type|.
+  bool is_startup_profiling = 6;
+}
+
+message CpuCoreConfigRequest {
+  int64 device_id = 1;
+}
+
+message CpuCoreConfigResponse {
+  repeated CpuCoreConfigData configs = 1;
+
+  // CPU per-core physical configuration data.
+  message CpuCoreConfigData {
+    int32 core = 1;
+    int32 min_frequency_in_khz = 2;
+    int32 max_frequency_in_khz = 3;
+  }
+}
+
+// Requests the state of all the threads in the given time range.
+message GetThreadsRequest {
+  Session session = 1;
+  int64 start_timestamp = 2;
+  int64 end_timestamp = 3;
+}
+
+message GetThreadsResponse {
+  // Snapshot of the threads that were alive at a given moment.
+  message ThreadSnapshot {
+    message Snapshot {
+      int32 tid = 1;
+      string name = 2;
+      CpuThreadData.State state = 3;
+    }
+    repeated Snapshot threads = 1;
+    int64 timestamp = 2;
+  }
+
+  message ThreadActivity {
+    int64 timestamp = 1;
+    CpuThreadData.State new_state = 2;
+  }
+
+  // TODO: unify with Thread
+  message Thread {
+    int32 tid = 1;
+    string name = 2;
+    repeated ThreadActivity activities = 3;
+  }
+
+  // Threads with activities detected during the request range,
+  // ordered by thread id.
+  repeated Thread threads = 1;
+  // The snapshot of threads that were alive at the beginning of the range.
+  ThreadSnapshot initial_snapshot = 2;
+}
+
+message EmptyCpuReply {
+}
